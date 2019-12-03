@@ -9,6 +9,8 @@
 #include "LTC68042.h"
 #include "math.h"
 
+#include <time.h>
+
 //#define WDT_ENABLE
 
 #define DEBUG_MODE //TODO: comment this out when running  on actual car
@@ -48,7 +50,7 @@ void DEBUG_send_cell_voltage();
 void DEBUG_send_temp();
 void DEBUG_send_current();
 
-
+volatile double time_spent_start;
 
 int loop_count = 0; // TODO remove when fan controller tests stops
 int increment_mode = 1;
@@ -255,6 +257,9 @@ int main(void)
     UART_1_Start();
     #endif
     
+    //initialize outside of switch case because it won't let me inside of NORMAL before OK_SIG
+    time_spent_start = 4294967296;
+    
 	while(1){
 		switch (bms_status){
 			case BMS_BOOTUP:
@@ -284,6 +289,10 @@ int main(void)
 				break;
 
 			case BMS_NORMAL:
+                
+                //begin clock to time normal state
+                Timer_1_Start();
+                
                 // while loop with get volt get temp and bat_balance no delays
                 // DCP Enable in 68042.c!!!
 			    OK_SIG_Write(1);
@@ -299,8 +308,17 @@ int main(void)
 				
                 /*Only here to check that the old voltage reading still works*/
                 bms_init(MD_FILTERED);
-		        get_cell_volt();// TODO test voltage
                 
+//                Timer_1_Start(); //check these one at a time
+                
+		        get_cell_volt();// TODO test voltage
+                /*
+                Timer_1_Stop();
+                uint32 time_left = Timer_1_ReadCounter();
+                double time_spent = time_spent_start - (double)time_left;
+                time_spent_start = time_left;
+                double time_spent_seconds = (double)(time_spent) / (double)(24000000); //gives time in seconds
+*/                
 				//TESTDAY_2_TODO. check_stack_fuse(); // TODO: check if stacks are disconnected
                 
                                 
@@ -315,8 +333,17 @@ int main(void)
                     Temperature values written to bat_pack.subpacks[subpack]->temps[temp]->temp_c
                 */
                 bms_init(MD_NORMAL);
+                
+//                Timer_1_Start();
+                
                 get_cell_temps_fe6();
                 
+/*                Timer_1_Stop();
+                uint32 time_left2 = Timer_1_ReadCounter();
+                double time_spent2 = time_spent_start - (double)time_left2;
+                time_spent_start = time_left2;
+                double time_spent_seconds2 = (double)(time_spent2) / (double)(24000000); //gives time in seconds
+*/                
                 
 #ifdef DEBUG_MODE         
                 float32 temperatures[6][24];
@@ -399,20 +426,29 @@ int main(void)
                     bat_balance();
                     // Let it discharge for ... seconds
                     CyDelay(10000);
+                    //CyDelay(100000000);
                     bat_clear_balance();
                     // Let the boards cool down
                     CyDelay(1000);
+                    
                 }
                 */
-                       
+                     
                 bat_health_check();
                 if (bat_pack.health == FAULT){
-					bms_status = BMS_FAULT;
+				//	bms_status = BMS_FAULT;
 				}
 
                 set_current_interval(100);
 				system_interval = 10;
                 
+                //evaluating time spent in state
+                //do these time tests ONE FILE AT A TIME due to the hardcoded variable
+                Timer_1_Stop();
+                uint32 time_left = Timer_1_ReadCounter();
+                double time_spent = time_spent_start - (double)time_left;
+                time_spent_start = time_left;
+                double time_spent_seconds = (double)(time_spent) / (double)(24000000); //gives time in seconds
                 
 				break;
 

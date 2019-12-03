@@ -14,6 +14,7 @@
 
 #include <stdlib.h>
 
+
 uint8_t fatal_err;
 
 // FE3 new structure
@@ -33,6 +34,8 @@ volatile uint8_t bat_err_index;
 volatile uint8_t bat_err_index_loop;
 uint32_t deltaTime;
 uint32_t lastTime;
+
+extern volatile double time_spent_start;
 
 
 /**
@@ -163,7 +166,7 @@ void check_chips(){
 
 uint8_t get_cell_volt(){
     
-    LTC68_ClearFIFO();
+    LTC68_ClearFIFO(); //spi fifo clearing is good practice
     int error1 = 0;
     int error2 = 0;
     
@@ -173,8 +176,10 @@ uint8_t get_cell_volt(){
     wakeup_sleep(0);
     CyDelay(1); // Waited more
     //for (int i = 0; i < 100; i++) {
+    
         LTC6804_adcv();
         LTC6804_adcv();
+        
     //}
     CyDelay(1); // Give it time before switching
     
@@ -192,15 +197,28 @@ uint8_t get_cell_volt(){
     
     //uint16_t *test = (uint16_t*)(&cell_codes[IC_PER_BUS]); // SHOULD PROBABLY REPLACE WITH SOMETHING LIKE 
                                                              // instead of copying values from two arrays
-    
+//    Timer_1_Start();
     error1 = LTC6804_rdcv(0, IC_PER_BUS, cell_codes_lower); // Set to read back all cell voltage registers
+/*    Timer_1_Stop();
+    uint32 time_left = Timer_1_ReadCounter(); //clock counts backwards
+    double time_spent = time_spent_start - (double)time_left;
+    time_spent_start = time_left;
+    double time_spent_seconds = (double)(time_spent) / (double)(24000000); //gives time in seconds
+*/    
     
     CyDelay(1); // Give it a moment before switching.
     Select6820_Write(1); // Select bus 1
     wakeup_sleep(1);
     CyDelay(10);
-    error2 = LTC6804_rdcv(0, IC_PER_BUS, cell_codes_higher);
     
+//    Timer_1_Start();
+    error2 = LTC6804_rdcv(0, IC_PER_BUS, cell_codes_higher);
+/*    Timer_1_Stop();
+    uint32 time_left_2 = Timer_1_ReadCounter(); //clock counts backwards
+    double time_spent_2 = time_spent_start - (double)time_left_2;
+    time_spent_start = time_left_2;
+    double time_spent_seconds_2 = (double)(time_spent_2) / (double)(24000000); //gives time in secondstime_t end = time(NULL);
+*/   
     if (error1 == -1 || error2 == -1)
     {
         #ifdef DEBUG_LCD
@@ -309,12 +327,12 @@ uint8_t open_wire_adow(uint8_t pup){
     to 3 bits in the register, and in order to write
     to 3 bits you must write to them all.
 */
-uint8_t get_cfga_on_init(uint8_t lt_addr, uint8_t cfga_data[5]){
+uint8_t get_cfga_on_init(uint8_t lt_addr[9], uint8_t cfga_data[9][5]){
     
     int8_t pec_error;
-    uint8_t cfga[6];
+    uint8_t cfga[9][6];
     
-    uint8_t bus = lt_addr / IC_PER_BUS;
+    uint8_t bus = lt_addr[8] / IC_PER_BUS;
     
     LTC68_ClearFIFO();
     
@@ -324,14 +342,18 @@ uint8_t get_cfga_on_init(uint8_t lt_addr, uint8_t cfga_data[5]){
     wakeup_sleep(bus);
     CyDelay(10);
     
-    pec_error = LTC6804_rdcfga(lt_addr, cfga);
-    pec_error = LTC6804_rdcfga(lt_addr, cfga);
+    for(uint8_t i = 0; i < 9; i++){
     
-    cfga_data[0] = cfga[1];
-    cfga_data[1] = cfga[2];
-    cfga_data[2] = cfga[3];
-    cfga_data[3] = cfga[4];
-    cfga_data[4] = cfga[5];
+        pec_error = LTC6804_rdcfga(lt_addr[i], cfga[i]);
+        pec_error = LTC6804_rdcfga(lt_addr[i], cfga[i]);
+        
+        cfga_data[i][0] = cfga[i][1];
+        cfga_data[i][1] = cfga[i][2];
+        cfga_data[i][2] = cfga[i][3];
+        cfga_data[i][3] = cfga[i][4];
+        cfga_data[i][4] = cfga[i][5];
+        
+    }
     
     //TODO: add pec_error check
     return 0;
@@ -370,19 +392,27 @@ float32 get_median_temp(float32 temps[6][24])
 /**
     Get all temperatures on a single lt chip
 */
-uint8_t get_lt_temps(uint8_t lt_addr, uint8_t orig_cfga_data[5])
+uint8_t get_lt_temps(uint8_t lt_addr[9], uint8_t orig_cfga_data[9][5])
 {
-    uint16_t auxa;
-    uint8_t subpack_num = lt_addr / LT_PER_PACK;
+    uint16_t auxa[IC_PER_BUS];
+    //uint8_t subpack_num = lt_addr[8] / LT_PER_PACK;
+    
     // uint8_t offset = (lt_addr % LT_PER_PACK) * TEMPS_ON_BOARD;
     uint8_t offset;
 
     for(uint8_t mux_sel = 0; mux_sel < 8; mux_sel++) {
-        get_cell_temp_fe6(lt_addr, mux_sel, orig_cfga_data, &auxa);
+
+        get_cell_temp_fe6(lt_addr, mux_sel, orig_cfga_data, auxa);                   
+        
         float32 temp;
+        
+        for(uint8_t i = 0; i < IC_PER_BUS; i++) {
         //if (auxa != 0xFFFF) {
-            temp = (float32)auxa/10000;
+            temp = (float32)auxa[i]/10000;
+            
             temp = (1/((1/298.15) + ((1/3428.0)*log(temp/(3-temp))))) - 273.15;
+            
+            uint8_t subpack_num = lt_addr[i] / LT_PER_PACK;
         //} else {
         //    temp = bat_pack.HI_temp_c;
         //}
@@ -393,14 +423,15 @@ uint8_t get_lt_temps(uint8_t lt_addr, uint8_t orig_cfga_data[5])
         
         
         if (mux_sel <= 4) {
-            offset = ((lt_addr % LT_PER_PACK) * 5) + mux_sel;
+            offset = ((lt_addr[i] % LT_PER_PACK) * 5) + mux_sel;
             bat_pack.subpacks[subpack_num]->temps[offset]->temp_c = temp;
         }
         else {
-            offset = ((lt_addr % LT_PER_PACK) * LT_PER_PACK) + (mux_sel - 5);
+            offset = ((lt_addr[i] % LT_PER_PACK) * LT_PER_PACK) + (mux_sel - 5);
             bat_pack.subpacks[subpack_num]->board_temps[offset]->temp_c = temp;
         }
         
+        }
     }
     
     return 0;
@@ -414,14 +445,30 @@ uint8_t get_cell_temps_fe6()
 {
     // the number of lt chips. 
     uint8_t num_lts = 18;
+    uint8_t orig_cfga_data[9][5];
     
-    uint8_t orig_cfga_data[5];
+    uint8_t j = 9;
+    uint8_t lt[9];
     
+    for (uint8_t i = 0; i < IC_PER_BUS; i++){ //Bus 0
+            lt[i] = i;
+    }
+    get_cfga_on_init(lt, orig_cfga_data);
+    get_lt_temps(lt, orig_cfga_data);
+    
+    for (uint8_t i = 0; i < IC_PER_BUS; i++){ //Bus 1
+            lt[i] = j;
+            j++;
+    }
+    get_cfga_on_init(lt, orig_cfga_data);
+    get_lt_temps(lt, orig_cfga_data);
+    
+    /*
     for(int lt = 0; lt < num_lts; lt++) {
         get_cfga_on_init(lt, orig_cfga_data);
         get_lt_temps(lt, orig_cfga_data);
     }
-    
+    */
     // Bad thermistor in pack
     bat_pack.subpacks[5]->temps[0]->temp_c = (double) 20;
     check_temp();
@@ -432,9 +479,9 @@ uint8_t get_cell_temps_fe6()
 
 
 /*
- * get a temperature for a single cell
+ * get a temperature for a single cell edit: get temp of single mux sel on 9 chips of one bus
  */
-uint8_t get_cell_temp_fe6(uint8_t lt_addr, uint8_t mux_sel, uint8_t orig_cfga_data[5], uint16_t *auxa){
+uint8_t get_cell_temp_fe6(uint8_t lt_addr[9], uint8_t mux_sel, uint8_t orig_cfga_data[9][5], uint16_t auxa[9]){
     /*
      * 1. Prepare LTC6820 for traffic
      * 2. Select the correct bus
@@ -444,7 +491,7 @@ uint8_t get_cell_temp_fe6(uint8_t lt_addr, uint8_t mux_sel, uint8_t orig_cfga_da
     */
 
     int8_t pec_error;
-    uint8_t bus = lt_addr / IC_PER_BUS;
+    uint8_t bus = lt_addr[8] / IC_PER_BUS;
     
     // 1
     LTC68_ClearFIFO();
@@ -454,17 +501,18 @@ uint8_t get_cell_temp_fe6(uint8_t lt_addr, uint8_t mux_sel, uint8_t orig_cfga_da
     wakeup_sleep(bus);
     
     // 3
-    LTC6804_wrcfga(lt_addr, mux_sel, orig_cfga_data);
-    LTC6804_wrcfga(lt_addr, mux_sel, orig_cfga_data);
-    
-    // 4
-    LTC6804_adax();
-    LTC6804_adax();
-    
-    // 5
-    
-    LTC6804_rdaux_fe6(lt_addr, GPIO1, auxa);
-    LTC6804_rdaux_fe6(lt_addr, GPIO1, auxa);
+    for (uint16_t i = 0; i < IC_PER_BUS; i++) {
+        LTC6804_wrcfga(lt_addr[i], mux_sel, orig_cfga_data[i]);
+        LTC6804_wrcfga(lt_addr[i], mux_sel, orig_cfga_data[i]);
+        
+        // 4
+        LTC6804_adax();
+        LTC6804_adax();
+        
+        // 5
+        LTC6804_rdaux_fe6(lt_addr[i], GPIO1, &auxa[i]);
+        LTC6804_rdaux_fe6(lt_addr[i], GPIO1, &auxa[i]);  
+    }
     
     return 0;
 }
@@ -1148,6 +1196,103 @@ void _SOC_log(){
 }
 
 
+void bat_balance(){ //for test rig
+    LTC68_ClearFIFO();
+    
+    uint8_t ic=0;
+    uint8_t cell=0;
+    uint8_t i=0;
+    uint8_t temp_cfg[IC_PER_BUS * N_OF_BUSSES][6];
+    //uint16_t low_voltage = bat_pack.LO_voltage <= UNDER_VOLTAGE ? UNDER_VOLTAGE : bat_pack.LO_voltage;
+    
+    
+    //for (ic = 0; ic < (IC_PER_BUS * N_OF_BUSSES); ic++){
+        
+        //for (cell = 0; cell < 9; cell++){ //9 cells in test rig
+        //    uint16_t diff = 0;
+        //    if (cell_codes[ic][cell] / 10 > low_voltage)
+        //        diff = cell_codes[ic][cell]/10 - low_voltage;
+            
+            // These two cases will set diff = 0 if there is an empty input on the 6811
+            // Each 6811 can measure 12 voltages. We use 9/9/10 per slave.
+            // First case is for chips that have 10 cells attached
+            // Second case is for chips that have 9 cells attached
+           // if (ic == 2 || ic == 5 || ic == 8 || ic == 11 || ic == 14 || ic == 17) { // These ICs have different cells used
+            //    if (!(CELL_ENABLE_HIGH & (0x1 << cell))){ // If not enabled
+            //        diff = 0;
+            //    }    
+            //} else { // If not enabled
+            //    if (!(CELL_ENABLE_LOW & (0x1 << cell))){
+            //        diff = 0;
+            //    } 
+            //}
+            
+            // This is here to handle a bug which causes the first cell voltage to be 
+            // wrong sometimes. I think I have fixed it, but I am putting this hear 
+            // just in case
+            //if (cell_codes[ic][cell]/10 > 6000) {
+            //    diff = 0;   
+            //}
+            
+            //if (diff > 0 && diff > BALANCE_THRESHOLD){    
+                // if this cell is BALANCE_THRESHOLD or more higher than the lowest cell
+            //    if (cell < 8){
+            //        temp_cfg[ic][4] |= (0x1 << cell);
+            //    }else{
+            //        temp_cfg[ic][5] |= (0x1 << (cell - 8));
+            //    }
+            //}
+            
+        //}
+    
+    
+    //Test code!!!!
+    //temp_cfg[0][4] = 0xFF;
+    //temp_cfg[0][5] |= (0x1);
+    //temp_cfg[0][5] |= (0x1) << 1;
+    //ic = 3;
+    //for (ic =3; ic < 6; ic++) {
+        temp_cfg[ic][4] = 0xFF;
+        temp_cfg[ic][5] |= 0x1111;
+    //}
+    
+    //end purely test code 
+    
+    // discharge time has been set in void LTC6804_init_cfg() already. 0x2 = 1 min
+    uint8_t cfga[18][6]; 
+    
+    Select6820_Write(0);
+    wakeup_sleep(0);
+    CyDelay(1);
+    
+    for (ic = 0; ic < 1; ic++) {
+        LTC6804_wrcfga_balance(ic, temp_cfg[ic]);
+        LTC6804_wrcfga_balance(ic, temp_cfg[ic]);
+        
+        CyDelay(50);
+        
+        LTC6804_rdcfga(ic, cfga[ic]);
+        LTC6804_rdcfga(ic, cfga[ic]);
+    }
+
+    CyDelay(50);
+    
+    //Select6820_Write(1);
+    //wakeup_sleep(1);
+    //CyDelay(1);
+    
+    //for (ic = 9; ic < 18; ic++) {
+    //    LTC6804_wrcfga_balance(ic, temp_cfg[ic]);
+    //    LTC6804_wrcfga_balance(ic, temp_cfg[ic]);  
+    //    CyDelay(50);
+    //    LTC6804_rdcfga(ic, cfga[ic]);
+    //    LTC6804_rdcfga(ic, cfga[ic]);
+    //}
+
+    //CyDelay(100);
+} //bat_balance for test rig 
+
+/*
 void bat_balance(){
     LTC68_ClearFIFO();
     
@@ -1205,9 +1350,9 @@ void bat_balance(){
     }
     
     
-    /*Test code!!!!*/
+    //Test code!!!!
     //temp_cfg[9][4] = 0xFF;
-    /* end purely test code */
+    //end purely test code
     
     // discharge time has been set in void LTC6804_init_cfg() already. 0x2 = 1 min
     uint8_t cfga[18][6]; 
@@ -1242,6 +1387,7 @@ void bat_balance(){
 
     CyDelay(100);
 }
+*/
 
 void bat_clear_balance() {
     uint8_t cfg_data[6];
