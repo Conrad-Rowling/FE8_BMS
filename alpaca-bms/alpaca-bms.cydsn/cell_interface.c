@@ -360,7 +360,7 @@ uint8_t get_cfga_on_init(uint8_t lt_addr[9], uint8_t cfga_data[9][5]){
 }
 
 
-float32 get_median_temp(float32 temps[6][24])
+float32 get_median_temp(float32 temps[6][24]) //not used anywhere?
 {
     int num_temps = (TEMPS_ON_BOARD + 16) * 6;
     float32 local_temps[24 * 6];
@@ -400,7 +400,7 @@ uint8_t get_lt_temps(uint8_t lt_addr[9], uint8_t orig_cfga_data[9][5])
     // uint8_t offset = (lt_addr % LT_PER_PACK) * TEMPS_ON_BOARD;
     uint8_t offset;
 
-    for(uint8_t mux_sel = 0; mux_sel < 8; mux_sel++) {
+    for(uint8_t mux_sel = 0; mux_sel < 5; mux_sel++) { //only cell temps here
 
         get_cell_temp_fe6(lt_addr, mux_sel, orig_cfga_data, auxa);                   
         
@@ -426,13 +426,30 @@ uint8_t get_lt_temps(uint8_t lt_addr[9], uint8_t orig_cfga_data[9][5])
             offset = ((lt_addr[i] % LT_PER_PACK) * 5) + mux_sel;
             bat_pack.subpacks[subpack_num]->temps[offset]->temp_c = temp;
         }
-        else {
+
+        }
+    }
+    
+#ifdef BALANCE_ON
+    for(uint8_t mux_sel = 5; mux_sel < 8; mux_sel++) { //only board temps here
+
+        get_cell_temp_fe6(lt_addr, mux_sel, orig_cfga_data, auxa);                   
+        
+        float32 temp;
+        
+        for(uint8_t i = 0; i < IC_PER_BUS; i++) {
+
+            temp = (float32)auxa[i]/10000;
+            
+            temp = (1/((1/298.15) + ((1/3428.0)*log(temp/(3-temp))))) - 273.15;
+            
+            uint8_t subpack_num = lt_addr[i] / LT_PER_PACK;
+
             offset = ((lt_addr[i] % LT_PER_PACK) * LT_PER_PACK) + (mux_sel - 5);
             bat_pack.subpacks[subpack_num]->board_temps[offset]->temp_c = temp;
         }
-        
-        }
     }
+#endif
     
     return 0;
 }
@@ -463,12 +480,6 @@ uint8_t get_cell_temps_fe6()
     get_cfga_on_init(lt, orig_cfga_data);
     get_lt_temps(lt, orig_cfga_data);
     
-    /*
-    for(int lt = 0; lt < num_lts; lt++) {
-        get_cfga_on_init(lt, orig_cfga_data);
-        get_lt_temps(lt, orig_cfga_data);
-    }
-    */
     // Bad thermistor in pack
     bat_pack.subpacks[5]->temps[0]->temp_c = (double) 20;
     check_temp();
@@ -805,6 +816,7 @@ void check_temp(){
     temp = 0;
     subpack = 0;
     */
+#ifdef BALANCE_ON
     // check board temps
     for (cell = 0; cell < N_OF_TEMP_BOARD; cell++){
         temp_c = board_temp[cell].temp_c;
@@ -823,7 +835,8 @@ void check_temp(){
             }           
         }
     }
-
+#endif
+   
     // Update subpacks
     for (subpack = 0; subpack < N_OF_SUBPACK; subpack++){
         for (temp = 0; temp < (N_OF_TEMP / N_OF_SUBPACK); temp++){
@@ -877,7 +890,7 @@ void check_temp(){
         //insert val into sorted temps
         addToSorted(bat_temp[i].temp_c, i);
     }
-    
+#ifdef BALANCE_ON
     // Update the battery_pack highest temperature
     bat_pack.HI_temp_board_c = board_temp[0].temp_c;
     bat_pack.HI_temp_board_node = 0;
@@ -888,7 +901,7 @@ void check_temp(){
             bat_pack.HI_temp_board_node = i / (N_OF_TEMP_BOARD / N_OF_SUBPACK);
         }    
     }
-    
+#endif
     // update pack of temp error
     for (subpack = 0; subpack < N_OF_SUBPACK; subpack++){
         if (bat_pack.subpacks[subpack]->over_temp != 0){

@@ -14,6 +14,8 @@
 * the software package with which this file was provided.
 ********************************************************************************/
 
+//#define BALANCE_ON UNCOMMENT ONLY WHEN BALANCING
+
 #include "cyfitter_cfg.h"
 #include "cydevice.h"
 #include "cydevice_trm.h"
@@ -75,6 +77,7 @@
 #include "fan4_tach.h"
 #include "Thermistor1.h"
 #include "UART_1.h"
+#include "Timer_1.h"
 #include "LTC68_IntClock.h"
 #include "ADC_current_AMux.h"
 #include "ADC_current_Ext_CP_Clk.h"
@@ -82,7 +85,6 @@
 #include "ADC_current_theACLK.h"
 #include "FanController_PID_ISR.h"
 #include "UART_1_IntClock.h"
-#include "cy_em_eeprom.h"
 #include "core_cm3_psoc5.h"
 #include "CyDmac.h"
 #include "CyFlash.h"
@@ -91,6 +93,7 @@
 #include "cyPm.h"
 #include "CySpc.h"
 #include "cytypes.h"
+#include "cy_em_eeprom.h"
 
 /*[]*/
 
