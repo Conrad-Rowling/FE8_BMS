@@ -72,11 +72,31 @@ CY_ISR(current_update_Handler){
     //Data sent individually in following format.
     code.subpack_index.index.value
 */
-void printUsbData(char code, uint8_t subpack, uint8_t index, int data)
+void printUsbData(uint8_t code, uint8_t subpack, uint8_t index, int data)
 {
-    char buffer[50];
-    sprintf(buffer, "%c-%u-%u-%u\n", code, subpack, index, data);
-    UART_1_PutString(buffer);
+   uint8_t buffer;
+    
+    //sprintf(buffer, "%c-%c-%c-%c\n", code, subpack, index, data); // TODO: test this (was %c-%u-%u-%u\n)
+    //UART_1_PutString(buffer);
+    //UART_1_PutChar(code);
+    //UART_1_PutChar(subpack);
+    //UART_1_PutChar(index);
+    
+    UART_1_PutChar(0xFF);
+    UART_1_PutChar(255 - code);
+    UART_1_PutChar(subpack);
+    UART_1_PutChar(index);
+    for(int i =0; i<4; i++) {
+        buffer = data >> (8*i);
+        if(buffer == 253 || buffer == 254 || buffer == 255) {
+            buffer = 252;
+            UART_1_PutChar(data);
+        }
+    }
+    //UART_1_PutChar(data);
+    //UART_1_PutChar(data >> 8);
+   // UART_1_PutChar(data >> 16);
+   // UART_1_PutChar(data >> 24);
 }
 
 uint8 lastHighTemp = 0;
@@ -104,21 +124,21 @@ void process_event(){
         // send cell voltages 
         for(uint8 subpack = 0; subpack < 6; subpack++) {
             for(uint8 ind = 0; ind < 28; ind++) {
-                printUsbData('c', subpack, ind, bat_pack.subpacks[subpack]->cells[ind]->voltage);
+                printUsbData(0 , subpack, ind, bat_pack.subpacks[subpack]->cells[ind]->voltage);
             }
         }
         
         // send board temps
         for(uint8 subpack = 0; subpack < 6; subpack++) {
             for(uint8 ind = 0; ind < 9; ind++) {
-                printUsbData('b', subpack, ind, (bat_pack.subpacks[subpack]->board_temps[ind]->temp_c * 1000));
+                printUsbData(1 , subpack, ind, (bat_pack.subpacks[subpack]->board_temps[ind]->temp_c * 1000));
             }
         }
         
         // send cell temps
         for(uint8 subpack = 0; subpack < 6; subpack++) {
             for(uint8 ind = 0; ind < 15; ind++) {
-                printUsbData('t', subpack, ind, (bat_pack.subpacks[subpack]->temps[ind]->temp_c * 1000));
+                printUsbData(3 , subpack, ind, (bat_pack.subpacks[subpack]->temps[ind]->temp_c * 1000));
             }
         }
     #endif
