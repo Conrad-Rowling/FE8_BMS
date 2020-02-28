@@ -466,7 +466,7 @@ uint8_t get_cell_temps_fe6()
     
     uint8_t j = 9;
     uint8_t lt[9];
-     
+    
     for (uint8_t i = 0; i < IC_PER_BUS; i++){ //Bus 0
             lt[i] = i;
     }

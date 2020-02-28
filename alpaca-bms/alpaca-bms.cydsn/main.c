@@ -457,7 +457,7 @@ int main(void)
                      
                 bat_health_check();
                 if (bat_pack.health == FAULT){
-				//	bms_status = BMS_FAULT;
+					bms_status = BMS_FAULT;
 				}
 
                 set_current_interval(100);
