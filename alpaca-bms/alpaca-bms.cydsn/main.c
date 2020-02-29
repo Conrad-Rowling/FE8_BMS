@@ -91,6 +91,7 @@ void printUsbData(uint8_t code, uint8_t subpack, uint8_t index, int data)
         if(buffer == 253 || buffer == 254 || buffer == 255) {
             buffer = 252;
             UART_1_PutChar(data);
+            CyDelay(50);
         }
     }
     //UART_1_PutChar(data);
@@ -124,21 +125,21 @@ void process_event(){
         // send cell voltages 
         for(uint8 subpack = 0; subpack < 6; subpack++) {
             for(uint8 ind = 0; ind < 28; ind++) {
-                printUsbData(0 , subpack, ind, bat_pack.subpacks[subpack]->cells[ind]->voltage);
+                printUsbData(255 , subpack, ind, bat_pack.subpacks[subpack]->cells[ind]->voltage);
             }
         }
         
         // send board temps
         for(uint8 subpack = 0; subpack < 6; subpack++) {
             for(uint8 ind = 0; ind < 9; ind++) {
-                printUsbData(1 , subpack, ind, (bat_pack.subpacks[subpack]->board_temps[ind]->temp_c * 1000));
+                printUsbData(254 , subpack, ind, (bat_pack.subpacks[subpack]->board_temps[ind]->temp_c * 1000));
             }
         }
         
         // send cell temps
         for(uint8 subpack = 0; subpack < 6; subpack++) {
             for(uint8 ind = 0; ind < 15; ind++) {
-                printUsbData(3 , subpack, ind, (bat_pack.subpacks[subpack]->temps[ind]->temp_c * 1000));
+                printUsbData(253 , subpack, ind, (bat_pack.subpacks[subpack]->temps[ind]->temp_c * 1000));
             }
         }
     #endif
