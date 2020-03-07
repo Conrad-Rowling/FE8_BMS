@@ -72,7 +72,7 @@ CY_ISR(current_update_Handler){
     //Data sent individually in following format.
     code.subpack_index.index.value
 */
-void printUsbData(uint8_t code, uint8_t subpack, uint8_t index, int data)
+void printUsbData(uint8_t code, uint8_t subpack, uint8_t index, uint data)
 {
    uint8_t buffer;
     
@@ -83,16 +83,17 @@ void printUsbData(uint8_t code, uint8_t subpack, uint8_t index, int data)
     //UART_1_PutChar(index);
     
     UART_1_PutChar(0xFF);
-    UART_1_PutChar(255 - code);
+    UART_1_PutChar(code);
     UART_1_PutChar(subpack);
     UART_1_PutChar(index);
+    //UART_1_PutChar(data);
     for(int i =0; i<4; i++) {
         buffer = data >> (8*i);
         if(buffer == 253 || buffer == 254 || buffer == 255) {
             buffer = 252;
-            UART_1_PutChar(data);
-            CyDelay(50);
         }
+        UART_1_PutChar(buffer);
+        CyDelay(2);
     }
     //UART_1_PutChar(data);
     //UART_1_PutChar(data >> 8);
