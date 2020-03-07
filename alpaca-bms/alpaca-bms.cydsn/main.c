@@ -9,6 +9,8 @@
 #include "LTC68042.h"
 #include "math.h"
 
+#include <time.h>
+
 //#define WDT_ENABLE
 
 #define DEBUG_MODE //TODO: comment this out when running  on actual car
@@ -48,7 +50,7 @@ void DEBUG_send_cell_voltage();
 void DEBUG_send_temp();
 void DEBUG_send_current();
 
-
+volatile double time_spent_start;
 
 int loop_count = 0; // TODO remove when fan controller tests stops
 int increment_mode = 1;
@@ -70,11 +72,33 @@ CY_ISR(current_update_Handler){
     //Data sent individually in following format.
     code.subpack_index.index.value
 */
-void printUsbData(char code, uint8_t subpack, uint8_t index, int data)
+void printUsbData(uint8_t code, uint8_t subpack, uint8_t index, uint data)
 {
-    char buffer[50];
-    sprintf(buffer, "%c-%u-%u-%u\n", code, subpack, index, data);
-    UART_1_PutString(buffer);
+   uint8_t buffer;
+    
+    //sprintf(buffer, "%c-%c-%c-%c\n", code, subpack, index, data); // TODO: test this (was %c-%u-%u-%u\n)
+    //UART_1_PutString(buffer);
+    //UART_1_PutChar(code);
+    //UART_1_PutChar(subpack);
+    //UART_1_PutChar(index);
+    
+    UART_1_PutChar(0xFF);
+    UART_1_PutChar(code);
+    UART_1_PutChar(subpack);
+    UART_1_PutChar(index);
+    //UART_1_PutChar(data);
+    for(int i =0; i<4; i++) {
+        buffer = data >> (8*i);
+        if(buffer == 253 || buffer == 254 || buffer == 255) {
+            buffer = 252;
+        }
+        UART_1_PutChar(buffer);
+        CyDelay(2);
+    }
+    //UART_1_PutChar(data);
+    //UART_1_PutChar(data >> 8);
+   // UART_1_PutChar(data >> 16);
+   // UART_1_PutChar(data >> 24);
 }
 
 uint8 lastHighTemp = 0;
@@ -102,21 +126,21 @@ void process_event(){
         // send cell voltages 
         for(uint8 subpack = 0; subpack < 6; subpack++) {
             for(uint8 ind = 0; ind < 28; ind++) {
-                printUsbData('c', subpack, ind, bat_pack.subpacks[subpack]->cells[ind]->voltage);
+                printUsbData(255 , subpack, ind, bat_pack.subpacks[subpack]->cells[ind]->voltage);
             }
         }
         
         // send board temps
         for(uint8 subpack = 0; subpack < 6; subpack++) {
             for(uint8 ind = 0; ind < 9; ind++) {
-                printUsbData('b', subpack, ind, (bat_pack.subpacks[subpack]->board_temps[ind]->temp_c * 1000));
+                printUsbData(254 , subpack, ind, (bat_pack.subpacks[subpack]->board_temps[ind]->temp_c * 1000));
             }
         }
         
         // send cell temps
         for(uint8 subpack = 0; subpack < 6; subpack++) {
             for(uint8 ind = 0; ind < 15; ind++) {
-                printUsbData('t', subpack, ind, (bat_pack.subpacks[subpack]->temps[ind]->temp_c * 1000));
+                printUsbData(253 , subpack, ind, (bat_pack.subpacks[subpack]->temps[ind]->temp_c * 1000));
             }
         }
     #endif
@@ -255,6 +279,9 @@ int main(void)
     UART_1_Start();
     #endif
     
+    //initialize outside of switch case because it won't let me inside of NORMAL before OK_SIG
+    time_spent_start = 4294967296;
+    
 	while(1){
 		switch (bms_status){
 			case BMS_BOOTUP:
@@ -284,6 +311,10 @@ int main(void)
 				break;
 
 			case BMS_NORMAL:
+                
+                //begin clock to time normal state
+                Timer_1_Start();
+                
                 // while loop with get volt get temp and bat_balance no delays
                 // DCP Enable in 68042.c!!!
 			    OK_SIG_Write(1);
@@ -299,8 +330,17 @@ int main(void)
 				
                 /*Only here to check that the old voltage reading still works*/
                 bms_init(MD_FILTERED);
-		        get_cell_volt();// TODO test voltage
                 
+//                Timer_1_Start(); //check these one at a time
+                
+		        get_cell_volt();// TODO test voltage
+                /*
+                Timer_1_Stop();
+                uint32 time_left = Timer_1_ReadCounter();
+                double time_spent = time_spent_start - (double)time_left;
+                time_spent_start = time_left;
+                double time_spent_seconds = (double)(time_spent) / (double)(24000000); //gives time in seconds
+*/                
 				//TESTDAY_2_TODO. check_stack_fuse(); // TODO: check if stacks are disconnected
                 
                                 
@@ -315,8 +355,18 @@ int main(void)
                     Temperature values written to bat_pack.subpacks[subpack]->temps[temp]->temp_c
                 */
                 bms_init(MD_NORMAL);
-                get_cell_temps_fe6();
                 
+//                Timer_1_Start();
+                
+                get_cell_temps_fe6();
+                bat_clear_balance(); //TODO : make sure this works!!!!
+                
+/*                Timer_1_Stop();
+                uint32 time_left2 = Timer_1_ReadCounter();
+                double time_spent2 = time_spent_start - (double)time_left2;
+                time_spent_start = time_left2;
+                double time_spent_seconds2 = (double)(time_spent2) / (double)(24000000); //gives time in seconds
+*/                
                 
 #ifdef DEBUG_MODE         
                 float32 temperatures[6][24];
@@ -385,8 +435,8 @@ int main(void)
                 //SKY_TODO update_soc()
  
                 
-                /*
-                //Uncomment all of this to balance
+#ifdef BALANCE_ON
+                //Uncomment in project.h to balance
                 if (bat_pack.HI_temp_board_c >= 60) {
                     BALANCE_FLAG = false;
                 } else if (bat_pack.HI_temp_board_c < 55) {
@@ -399,12 +449,14 @@ int main(void)
                     bat_balance();
                     // Let it discharge for ... seconds
                     CyDelay(10000);
+                    //CyDelay(100000000);
                     bat_clear_balance();
                     // Let the boards cool down
                     CyDelay(1000);
+                    
                 }
-                */
-                       
+#endif
+                     
                 bat_health_check();
                 if (bat_pack.health == FAULT){
 					bms_status = BMS_FAULT;
@@ -413,6 +465,13 @@ int main(void)
                 set_current_interval(100);
 				system_interval = 10;
                 
+                //evaluating time spent in state
+                //do these time tests ONE FILE AT A TIME due to the hardcoded variable
+                Timer_1_Stop();
+                uint32 time_left = Timer_1_ReadCounter();
+                double time_spent = time_spent_start - (double)time_left;
+                time_spent_start = time_left;
+                double time_spent_seconds = (double)(time_spent) / (double)(24000000); //gives time in seconds
                 
 				break;
 
